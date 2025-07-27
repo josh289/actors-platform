@@ -16,3 +16,7 @@ export * from './test-utilities';
 // Enhanced AI-friendly features
 export { ActorError } from './actor-error';
 export { EnhancedTestUtilities, TestDataBuilder } from './enhanced-test-utilities';
+
+// Event Registry and Message System
+export * from './event-registry';
+export * from './message';

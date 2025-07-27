@@ -22,6 +22,8 @@ import { ComponentExportManager, ComponentExport, ComponentManifest } from './co
 import { EventValidator } from './event-validator';
 import { TestUtilities } from './test-utilities';
 import { ActorError, StateValidationResult } from './actor-error';
+import { IEventRegistry, ActorManifest, EventDefinition } from './event-registry/types';
+import { BaseMessage, MessageFactory, MessageResult } from './message';
 
 /**
  * Enhanced Base Actor Class with Built-in Production Features
@@ -70,6 +72,10 @@ export abstract class Actor<TState extends ActorState = ActorState> {
   protected devMode = process.env.NODE_ENV === 'development';
   protected stateHistory: Array<{ timestamp: Date; operation: string; changes: any }> = [];
   protected logContext = new Map<string, any>();
+  
+  // Event Registry Integration
+  protected static eventRegistry?: IEventRegistry;
+  protected actorManifest?: ActorManifest;
   
   // Health check data
   private lastHealthCheck: Date;
@@ -122,6 +128,36 @@ export abstract class Actor<TState extends ActorState = ActorState> {
   }
 
   /**
+   * Set the global event registry for all actors
+   */
+  static setEventRegistry(registry: IEventRegistry): void {
+    Actor.eventRegistry = registry;
+    MessageFactory.setRegistry(registry);
+  }
+
+  /**
+   * Get the global event registry
+   */
+  static getEventRegistry(): IEventRegistry | undefined {
+    return Actor.eventRegistry;
+  }
+
+  /**
+   * Declare the actor manifest (which events this actor handles/emits)
+   * Subclasses should override this to declare their events
+   */
+  protected abstract getActorManifest(): ActorManifest;
+
+  /**
+   * Register event definitions with the registry
+   * Subclasses can override this to register their event schemas
+   */
+  protected async registerEventDefinitions(): Promise<void> {
+    // Default implementation does nothing
+    // Subclasses should override to register their events
+  }
+
+  /**
    * Initialize actor with enhanced features
    */
   async initialize(): Promise<void> {
@@ -148,6 +184,22 @@ export abstract class Actor<TState extends ActorState = ActorState> {
 
       // Initialize monitoring
       await this.monitoring.initialize();
+      
+      // Register actor with event registry if available
+      if (Actor.eventRegistry) {
+        try {
+          // First register event definitions
+          await this.registerEventDefinitions();
+          
+          // Then register the actor manifest
+          this.actorManifest = this.getActorManifest();
+          await Actor.eventRegistry.registerActor(this.actorManifest);
+          this.log.info(`Actor ${this.config.name} registered with event registry`);
+        } catch (error) {
+          this.log.warn(`Failed to register actor with event registry: ${(error as Error).message}`);
+          // Don't fail initialization if registry registration fails
+        }
+      }
       
       // Call subclass initialization
       await this.onInitialize();
@@ -215,8 +267,18 @@ protected async createDefaultState(): Promise<MyState> {
       // Before command hook
       await this.beforeCommand(event);
       
-      // Validate event
-      const validationResult = await this.eventValidator.validateCommand(event);
+      // Validate event with registry if available, otherwise use local validator
+      let validationResult: { valid: boolean; errors: string[] };
+      if (Actor.eventRegistry) {
+        const registryValidation = await Actor.eventRegistry.validatePayload(event.type, event.payload);
+        validationResult = {
+          valid: registryValidation.valid,
+          errors: registryValidation.errors?.map(e => `${e.path}: ${e.message}`) || []
+        };
+      } else {
+        validationResult = await this.eventValidator.validateCommand(event);
+      }
+      
       if (!validationResult.valid) {
         this.monitoring.incrementCounter(`command_${event.type}_validation_failed`);
         throw new ActorError(
@@ -355,8 +417,18 @@ protected async createDefaultState(): Promise<MyState> {
     });
 
     try {
-      // Validate query
-      const validationResult = await this.eventValidator.validateQuery(query);
+      // Validate query with registry if available, otherwise use local validator
+      let validationResult: { valid: boolean; errors: string[] };
+      if (Actor.eventRegistry) {
+        const registryValidation = await Actor.eventRegistry.validatePayload(query.type, query.payload);
+        validationResult = {
+          valid: registryValidation.valid,
+          errors: registryValidation.errors?.map(e => `${e.path}: ${e.message}`) || []
+        };
+      } else {
+        validationResult = await this.eventValidator.validateQuery(query);
+      }
+      
       if (!validationResult.valid) {
         this.monitoring.incrementCounter(`query_${query.type}_validation_failed`);
         return {
@@ -498,6 +570,7 @@ protected async createDefaultState(): Promise<MyState> {
    * Emit event with monitoring
    */
   protected async emit(event: Event): Promise<void> {
+    const startTime = Date.now();
     const enrichedEvent = {
       ...event,
       metadata: {
@@ -508,8 +581,77 @@ protected async createDefaultState(): Promise<MyState> {
       },
     };
 
-    await this.context.runtime.publish(enrichedEvent);
-    this.monitoring.incrementCounter(`event_${event.type}_emitted`);
+    try {
+      await this.context.runtime.publish(enrichedEvent);
+      this.monitoring.incrementCounter(`event_${event.type}_emitted`);
+      
+      // Record metric with registry if available
+      if (Actor.eventRegistry) {
+        await Actor.eventRegistry.recordMetric({
+          eventName: event.type,
+          actorId: this.id,
+          direction: 'produced',
+          success: true,
+          durationMs: Date.now() - startTime,
+          correlationId: event.metadata?.correlationId,
+        });
+      }
+    } catch (error) {
+      // Record failure metric with registry if available
+      if (Actor.eventRegistry) {
+        await Actor.eventRegistry.recordMetric({
+          eventName: event.type,
+          actorId: this.id,
+          direction: 'produced',
+          success: false,
+          durationMs: Date.now() - startTime,
+          errorMessage: (error as Error).message,
+          correlationId: event.metadata?.correlationId,
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Process an incoming message using the BaseMessage system
+   * This provides a unified interface for handling commands, queries, and notifications
+   */
+  async processMessage(message: BaseMessage): Promise<MessageResult> {
+    try {
+      // Check if this actor can handle the message
+      const canHandle = await message.canBeHandledBy(this.config.name);
+      if (!canHandle) {
+        throw new ActorError(
+          `Actor ${this.config.name} cannot handle message ${message.type}`,
+          'MESSAGE_NOT_HANDLED',
+          {
+            actor: this.config.name,
+            message: message.type,
+            category: message.getCategory(),
+            fix: 'Check actor manifest to ensure this message type is registered',
+            helpfulCommands: [
+              `await Actor.eventRegistry?.getConsumers('${message.type}')`,
+            ],
+          },
+          400
+        );
+      }
+      
+      // Process the message through the appropriate handler
+      return await message.process(this);
+    } catch (error) {
+      this.log.error(`Failed to process message ${message.type}:`, error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper method to process an event through the message system
+   */
+  async processEvent(event: Event): Promise<MessageResult> {
+    const message = await BaseMessage.fromEvent(event);
+    return this.processMessage(message);
   }
 
   /**
