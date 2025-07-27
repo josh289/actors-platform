@@ -1,0 +1,428 @@
+# BMAD Architecture Design
+# Actor-Agent Development Platform
+
+## System Architecture
+
+### Deployment Architecture
+
+deployment_strategy: microservices
+primary_platform: vercel
+secondary_platform: kubernetes
+
+### Service Topology
+
+services:
+  # Frontend Services
+  web_marketplace:
+    type: nextjs
+    platform: vercel
+    domain: actors.dev
+    components:
+      - marketplace_ui
+      - developer_portal
+      - documentation_site
+    environment:
+      - NODE_ENV
+      - NEXT_PUBLIC_API_URL
+      - NEXT_PUBLIC_CLERK_KEY
+
+  # API Services  
+  registry_api:
+    type: nodejs
+    platform: vercel_functions
+    endpoints:
+      - /api/actors/*
+      - /api/search/*
+      - /api/metrics/*
+    database: postgresql
+    cache: redis
+    environment:
+      - DATABASE_URL
+      - REDIS_URL
+      - S3_BUCKET
+
+  mcp_server:
+    type: nodejs
+    platform: vercel_functions
+    protocol: model_context_protocol
+    tools:
+      - search_actors
+      - get_patterns
+      - query_knowledge
+      - analyze_requirements
+      - design_models
+      - design_architecture
+      - generate_code
+      - deploy_system
+      - generate_docs
+    knowledge_store: postgresql
+    vector_db: pinecone
+
+  # Infrastructure Services
+  deployment_service:
+    type: nodejs
+    platform: vercel_functions
+    integrations:
+      - vercel_api
+      - kubernetes_api
+      - github_actions
+    secrets:
+      - VERCEL_TOKEN
+      - KUBECONFIG
+      - GITHUB_TOKEN
+
+  # Supporting Services
+  auth_service:
+    type: managed
+    provider: clerk
+    features:
+      - magic_links
+      - social_auth
+      - jwt_tokens
+      - webhooks
+
+  billing_service:
+    type: managed
+    provider: stripe
+    features:
+      - subscriptions
+      - invoicing
+      - webhooks
+      - customer_portal
+
+  notification_service:
+    type: nodejs
+    platform: vercel_functions
+    providers:
+      email: resend
+      sms: twilio
+      push: pusher
+
+  analytics_service:
+    type: managed
+    provider: posthog
+    features:
+      - event_tracking
+      - funnel_analysis
+      - feature_flags
+      - session_replay
+
+### Data Architecture
+
+databases:
+  primary:
+    type: postgresql
+    provider: supabase
+    schemas:
+      - actors
+      - projects
+      - deployments
+      - users
+      - billing
+      - analytics
+
+  cache:
+    type: redis
+    provider: upstash
+    use_cases:
+      - session_storage
+      - api_caching
+      - rate_limiting
+      - job_queues
+
+  vector:
+    type: pinecone
+    use_cases:
+      - pattern_similarity
+      - code_search
+      - knowledge_retrieval
+
+  object_storage:
+    type: s3
+    provider: aws
+    buckets:
+      - actor-code
+      - build-artifacts
+      - user-uploads
+
+### Communication Patterns
+
+actor_communication:
+  patterns:
+    ask:
+      type: request_response
+      timeout: 5000ms
+      retry: 3
+      circuit_breaker:
+        threshold: 5
+        timeout: 30000ms
+
+    tell:
+      type: fire_forget
+      delivery: at_least_once
+      queue: redis
+
+    publish:
+      type: pub_sub
+      broker: redis
+      topics:
+        - actor.events
+        - system.events
+        - user.events
+
+  protocols:
+    internal:
+      type: grpc
+      serialization: protobuf
+      compression: gzip
+
+    external:
+      type: rest
+      format: json
+      authentication: jwt
+
+### Security Architecture
+
+security:
+  authentication:
+    provider: clerk
+    methods:
+      - magic_link
+      - oauth2
+      - api_keys
+    session:
+      type: jwt
+      expiry: 24h
+
+  authorization:
+    type: rbac
+    roles:
+      - developer
+      - publisher
+      - admin
+    permissions:
+      - actor:read
+      - actor:write
+      - actor:publish
+      - project:manage
+      - billing:manage
+
+  api_security:
+    rate_limiting:
+      provider: upstash
+      limits:
+        anonymous: 100/hour
+        authenticated: 1000/hour
+        pro: 10000/hour
+
+    cors:
+      origins:
+        - https://actors.dev
+        - https://*.actors.dev
+      credentials: true
+
+  data_security:
+    encryption:
+      at_rest: aes256
+      in_transit: tls1.3
+    pii_handling:
+      anonymization: true
+      retention: 90_days
+
+### Monitoring & Observability
+
+monitoring:
+  metrics:
+    provider: datadog
+    collect:
+      - api_latency
+      - error_rates
+      - actor_usage
+      - deployment_success
+
+  logging:
+    provider: logflare
+    levels:
+      - error
+      - warn
+      - info
+    retention: 30_days
+
+  tracing:
+    provider: datadog
+    sample_rate: 0.1
+    propagation: w3c
+
+  alerting:
+    channels:
+      - pagerduty
+      - slack
+    rules:
+      - error_rate > 5%
+      - latency_p99 > 1000ms
+      - deployment_failure
+
+### Scaling Strategy
+
+scaling:
+  horizontal:
+    autoscaling:
+      min_instances: 2
+      max_instances: 100
+      target_cpu: 70%
+      target_memory: 80%
+
+  vertical:
+    instance_types:
+      api: 2cpu_4gb
+      workers: 4cpu_8gb
+      database: 8cpu_32gb
+
+  geographical:
+    regions:
+      primary: us-east-1
+      replicas:
+        - us-west-2
+        - eu-west-1
+        - ap-southeast-1
+
+  caching:
+    cdn:
+      provider: cloudflare
+      cache_static: 1_year
+      cache_api: 5_minutes
+
+### Development Workflow
+
+ci_cd:
+  version_control:
+    platform: github
+    branching:
+      main: production
+      staging: staging
+      feature/*: preview
+
+  continuous_integration:
+    platform: github_actions
+    checks:
+      - lint
+      - typecheck
+      - test
+      - security_scan
+      - build
+
+  continuous_deployment:
+    staging:
+      trigger: push_to_staging
+      approval: automatic
+      checks:
+        - integration_tests
+        - performance_tests
+
+    production:
+      trigger: push_to_main
+      approval: manual
+      strategy: blue_green
+      rollback: automatic
+
+### Disaster Recovery
+
+disaster_recovery:
+  backup:
+    frequency: hourly
+    retention: 30_days
+    locations:
+      - primary_region
+      - backup_region
+
+  recovery:
+    rto: 4_hours
+    rpo: 1_hour
+    procedures:
+      - automated_failover
+      - data_restoration
+      - service_validation
+
+### Cost Optimization
+
+cost_management:
+  compute:
+    serverless_first: true
+    auto_shutdown_dev: true
+    spot_instances: true
+
+  storage:
+    lifecycle_policies:
+      hot: 30_days
+      warm: 90_days
+      cold: archive
+
+  monitoring:
+    budget_alerts:
+      - 80%_threshold
+      - 100%_threshold
+    cost_allocation:
+      - by_service
+      - by_environment
+
+## Actor Runtime Architecture
+
+actor_runtime:
+  execution_model:
+    type: event_driven
+    concurrency: unlimited
+    isolation: process
+
+  state_management:
+    persistence: postgresql
+    caching: redis
+    consistency: eventual
+
+  event_bus:
+    implementation: redis_streams
+    delivery: at_least_once
+    ordering: partial
+
+  deployment_models:
+    vercel:
+      packaging: npm
+      entry: index.js
+      config: vercel.json
+
+    kubernetes:
+      packaging: docker
+      orchestration: helm
+      scaling: hpa
+
+## Integration Architecture
+
+integrations:
+  authentication:
+    - provider: clerk
+      features: [sso, mfa, webhooks]
+    - provider: auth0
+      features: [enterprise_sso]
+
+  payments:
+    - provider: stripe
+      features: [subscriptions, invoicing, tax]
+
+  communications:
+    - provider: resend
+      channel: email
+    - provider: twilio
+      channel: sms
+    - provider: pusher
+      channel: push
+
+  analytics:
+    - provider: posthog
+      features: [events, funnels, flags]
+    - provider: mixpanel
+      features: [cohorts, retention]
+
+  monitoring:
+    - provider: datadog
+      features: [apm, logs, metrics]
+    - provider: sentry
+      features: [errors, performance]

@@ -1,0 +1,123 @@
+actor:
+  name: user
+  description: "User authentication and profile management"
+  version: 1.0.0
+  
+  # State Schema
+  state:
+    users:
+      type: Map<string, User>
+      schema:
+        User:
+          id: string
+          email: string
+          profile: UserProfile
+          createdAt: timestamp
+          updatedAt: timestamp
+          lastLogin: timestamp
+        UserProfile:
+          name: string
+          avatar: string
+          preferences: object
+    
+    sessions:
+      type: Map<string, Session>
+      schema:
+        Session:
+          id: string
+          userId: string
+          createdAt: timestamp
+          expiresAt: timestamp
+    
+    magicLinks:
+      type: Map<string, MagicLink>
+      schema:
+        MagicLink:
+          token: string
+          email: string
+          createdAt: timestamp
+          expiresAt: timestamp
+          used: boolean
+
+  # Event Handlers
+  handles:
+    SEND_MAGIC_LINK:
+      description: "Send magic link for authentication"
+      payload:
+        email: string
+        redirectTo: string
+      validates:
+        - email.includes('@')
+      emits: MAGIC_LINK_SENT
+      
+    VERIFY_TOKEN:
+      description: "Verify magic link token"
+      payload:
+        token: string
+        email: string
+      emits: USER_LOGGED_IN
+      
+    LOGOUT_USER:
+      description: "End user session"
+      payload:
+        sessionId: string
+      emits: USER_LOGGED_OUT
+      
+    UPDATE_PROFILE:
+      description: "Update user profile"
+      payload:
+        userId: string
+        updates: object
+      emits: USER_UPDATED
+
+  # Queries
+  queries:
+    GET_USER:
+      description: "Get user by ID"
+      payload:
+        userId: string
+      returns: User
+      
+    GET_SESSION:
+      description: "Validate session"
+      payload:
+        sessionId: string
+      returns: 
+        valid: boolean
+        user: User
+        
+    GET_USER_BY_EMAIL:
+      description: "Find user by email"
+      payload:
+        email: string
+      returns: User
+
+  # Event Subscriptions
+  subscribes:
+    PAYMENT_PROCESSED:
+      handler: updateLastPurchase
+      description: "Track user purchase activity"
+    
+    ORDER_CREATED:
+      handler: updateOrderCount
+      description: "Track user order history"
+
+  # Dependencies
+  dependencies:
+    notification:
+      events: 
+        - SEND_EMAIL
+      pattern: tell
+      purpose: "Send magic link emails"
+    
+    analytics:
+      events: 
+        - TRACK_EVENT
+      pattern: tell
+      purpose: "Track authentication events"
+      
+    billing:
+      events:
+        - CREATE_CUSTOMER
+      pattern: tell
+      purpose: "Create billing profile for new users"

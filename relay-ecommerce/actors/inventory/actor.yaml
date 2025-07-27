@@ -1,0 +1,127 @@
+actor:
+  name: inventory
+  description: "Inventory and stock management"
+  version: 1.0.0
+  
+  # State Schema
+  state:
+    products:
+      type: Map<string, Product>
+      schema:
+        Product:
+          id: string
+          sku: string
+          name: string
+          stock: number
+          reserved: number
+          available: number
+          lowStockThreshold: number
+          updatedAt: timestamp
+    
+    reservations:
+      type: Map<string, Reservation>
+      schema:
+        Reservation:
+          id: string
+          orderId: string
+          items: array<ReservedItem>
+          createdAt: timestamp
+          expiresAt: timestamp
+          status: string
+        ReservedItem:
+          productId: string
+          quantity: number
+
+  # Event Handlers
+  handles:
+    CHECK_STOCK:
+      description: "Check stock availability"
+      payload:
+        items: array<{productId: string, quantity: number}>
+      pattern: ask
+      returns:
+        available: boolean
+        unavailable: array<{productId: string, requested: number, available: number}>
+      
+    RESERVE_STOCK:
+      description: "Reserve stock for order"
+      payload:
+        orderId: string
+        items: array<{productId: string, quantity: number}>
+      validates:
+        - items.length > 0
+      emits: STOCK_RESERVED
+      
+    RELEASE_STOCK:
+      description: "Release reserved stock"
+      payload:
+        reservationId: string
+      emits: STOCK_RELEASED
+      
+    UPDATE_STOCK:
+      description: "Update product stock levels"
+      payload:
+        productId: string
+        adjustment: number
+        reason: string
+      emits: STOCK_UPDATED
+      
+    CONFIRM_RESERVATION:
+      description: "Confirm reservation after payment"
+      payload:
+        reservationId: string
+      emits: RESERVATION_CONFIRMED
+
+  # Queries
+  queries:
+    GET_PRODUCT_STOCK:
+      description: "Get stock for product"
+      payload:
+        productId: string
+      returns:
+        productId: string
+        stock: number
+        reserved: number
+        available: number
+        
+    GET_LOW_STOCK_PRODUCTS:
+      description: "Get products below threshold"
+      returns: array<Product>
+      
+    GET_RESERVATION:
+      description: "Get reservation details"
+      payload:
+        reservationId: string
+      returns: Reservation
+
+  # Event Subscriptions
+  subscribes:
+    CART_CHECKED_OUT:
+      handler: checkAndReserveStock
+      description: "Reserve stock when checkout starts"
+      
+    PAYMENT_PROCESSED:
+      handler: confirmStockReservation
+      description: "Confirm reservation after payment"
+      
+    PAYMENT_FAILED:
+      handler: releaseStockReservation
+      description: "Release stock if payment fails"
+      
+    ORDER_CANCELLED:
+      handler: returnStockToInventory
+      description: "Return stock for cancelled orders"
+
+  # Dependencies
+  dependencies:
+    notification:
+      events: 
+        - SEND_EMAIL
+      pattern: tell
+      purpose: "Alert on low stock"
+    
+    analytics:
+      events: 
+        - TRACK_EVENT
+      pattern: tell
+      purpose: "Track inventory metrics"

@@ -1,0 +1,911 @@
+# BMAD Model Design
+# Actor-Agent Development Platform
+
+## Platform Core Actors
+
+### actor_registry
+state:
+  actors:
+    type: Map<string, Actor>
+    schema:
+      id: string
+      name: string
+      domain: string
+      version: string
+      purpose: string
+      capabilities: string[]
+      pricing:
+        tier: bronze | silver | gold
+        price: number
+      metadata:
+        author: string
+        license: string
+        repository: string
+        downloads: number
+        rating: number
+        lastUpdated: Date
+  
+  searchIndex:
+    type: Map<string, SearchEntry>
+    schema:
+      actorId: string
+      keywords: string[]
+      domain: string
+      capabilities: string[]
+
+  metrics:
+    type: Map<string, ActorMetrics>
+    schema:
+      actorId: string
+      downloads: number
+      usage: number
+      performance:
+        avgResponseTime: number
+        errorRate: number
+      reviews: Review[]
+
+events:
+  commands:
+    - REGISTER_ACTOR:
+        payload:
+          name: string
+          code: string
+          metadata: ActorMetadata
+    - UPDATE_ACTOR:
+        payload:
+          actorId: string
+          updates: Partial<Actor>
+    - PUBLISH_ACTOR:
+        payload:
+          actorId: string
+          tier: bronze | silver | gold
+    - TRACK_DOWNLOAD:
+        payload:
+          actorId: string
+          userId: string
+          timestamp: Date
+
+  queries:
+    - SEARCH_ACTORS:
+        payload:
+          query: string
+          filters?: ActorFilters
+        response: Actor[]
+    - GET_ACTOR:
+        payload:
+          actorId: string
+        response: Actor | null
+    - GET_METRICS:
+        payload:
+          actorId: string
+        response: ActorMetrics
+
+  notifications:
+    - ACTOR_PUBLISHED:
+        payload:
+          actorId: string
+          name: string
+          tier: string
+    - ACTOR_UPDATED:
+        payload:
+          actorId: string
+          version: string
+
+components:
+  web:
+    - ActorCard: Display actor summary in grid
+    - ActorDetails: Full actor information page
+    - SearchBar: Actor search with filters
+    - MetricsDashboard: Actor performance metrics
+    - PublishWizard: Step-by-step actor publishing
+  
+  api:
+    - /api/actors/search: Search endpoint
+    - /api/actors/:id: Get actor details
+    - /api/actors/publish: Publish new actor
+    - /api/metrics/:id: Get actor metrics
+
+### mcp_coordinator
+state:
+  knowledgeGraph:
+    type: Graph<KnowledgeNode>
+    schema:
+      nodeId: string
+      type: pattern | actor | workflow
+      content: any
+      connections: Edge[]
+      metadata:
+        created: Date
+        updated: Date
+        usageCount: number
+
+  patterns:
+    type: Map<string, Pattern>
+    schema:
+      id: string
+      name: string
+      category: string
+      code: string
+      description: string
+      examples: Example[]
+      successRate: number
+
+  projectContexts:
+    type: Map<string, ProjectContext>
+    schema:
+      projectId: string
+      requirements: string
+      actors: string[]
+      architecture: any
+      history: ToolExecution[]
+
+events:
+  commands:
+    - EXECUTE_TOOL:
+        payload:
+          tool: string
+          parameters: any
+          context: ProjectContext
+    - STORE_PATTERN:
+        payload:
+          pattern: Pattern
+          category: string
+    - UPDATE_KNOWLEDGE:
+        payload:
+          nodeId: string
+          updates: any
+
+  queries:
+    - SEARCH_PATTERNS:
+        payload:
+          query: string
+          category?: string
+        response: Pattern[]
+    - GET_RECOMMENDATIONS:
+        payload:
+          context: ProjectContext
+        response: Recommendation[]
+    - ANALYZE_REQUIREMENTS:
+        payload:
+          requirements: string
+        response: AnalysisResult
+
+  notifications:
+    - PATTERN_DISCOVERED:
+        payload:
+          pattern: Pattern
+          confidence: number
+    - KNOWLEDGE_UPDATED:
+        payload:
+          nodeId: string
+          type: string
+
+components:
+  mcp_tools:
+    - search_actors: Find actors by capability
+    - get_patterns: Retrieve implementation patterns
+    - query_knowledge: Access knowledge graph
+    - analyze_requirements: Phase 1 tool
+    - design_models: Phase 2 tool
+    - design_architecture: Phase 3 tool
+    - generate_code: Phase 4 tool
+    - deploy_system: Phase 5 tool
+    - generate_docs: Phase 6 tool
+
+### project_manager
+state:
+  projects:
+    type: Map<string, Project>
+    schema:
+      id: string
+      name: string
+      description: string
+      actors: ActorDependency[]
+      configuration: ProjectConfig
+      environments:
+        development: Environment
+        staging: Environment
+        production: Environment
+      status: creating | active | deploying | archived
+
+  builds:
+    type: Map<string, Build>
+    schema:
+      id: string
+      projectId: string
+      version: string
+      artifacts: Artifact[]
+      status: pending | building | success | failed
+      logs: string[]
+
+events:
+  commands:
+    - CREATE_PROJECT:
+        payload:
+          name: string
+          template?: string
+          actors: string[]
+    - ADD_ACTOR:
+        payload:
+          projectId: string
+          actorName: string
+          configuration: any
+    - BUILD_PROJECT:
+        payload:
+          projectId: string
+          environment: string
+    - DEPLOY_PROJECT:
+        payload:
+          projectId: string
+          buildId: string
+          target: vercel | kubernetes
+
+  queries:
+    - GET_PROJECT:
+        payload:
+          projectId: string
+        response: Project
+    - LIST_PROJECTS:
+        payload:
+          userId: string
+        response: Project[]
+    - GET_BUILD_STATUS:
+        payload:
+          buildId: string
+        response: Build
+
+  notifications:
+    - PROJECT_CREATED:
+        payload:
+          projectId: string
+          name: string
+    - BUILD_COMPLETED:
+        payload:
+          buildId: string
+          status: success | failed
+    - DEPLOYMENT_READY:
+        payload:
+          projectId: string
+          url: string
+
+components:
+  web:
+    - ProjectDashboard: Overview of all projects
+    - ProjectWizard: Create new project flow
+    - ActorConfigurator: Configure actor settings
+    - DeploymentPanel: Deployment controls
+    - BuildLogs: Real-time build output
+  
+  cli:
+    - init: Initialize new project
+    - add-actor: Add actor to project
+    - configure: Update actor config
+    - build: Build project
+    - deploy: Deploy to platform
+
+### deployment_engine
+state:
+  deployments:
+    type: Map<string, Deployment>
+    schema:
+      id: string
+      projectId: string
+      environment: string
+      platform: vercel | kubernetes
+      config:
+        domains: string[]
+        env: Record<string, string>
+        scaling: ScalingConfig
+      status: deploying | active | failed | suspended
+      health: HealthMetrics
+
+  infrastructure:
+    type: Map<string, Infrastructure>
+    schema:
+      id: string
+      provider: vercel | aws | gcp
+      resources: Resource[]
+      cost: CostMetrics
+      usage: UsageMetrics
+
+events:
+  commands:
+    - DEPLOY_APPLICATION:
+        payload:
+          projectId: string
+          buildId: string
+          config: DeploymentConfig
+    - UPDATE_DEPLOYMENT:
+        payload:
+          deploymentId: string
+          updates: Partial<DeploymentConfig>
+    - SCALE_DEPLOYMENT:
+        payload:
+          deploymentId: string
+          replicas: number
+    - ROLLBACK_DEPLOYMENT:
+        payload:
+          deploymentId: string
+          version: string
+
+  queries:
+    - GET_DEPLOYMENT_STATUS:
+        payload:
+          deploymentId: string
+        response: Deployment
+    - GET_HEALTH_METRICS:
+        payload:
+          deploymentId: string
+        response: HealthMetrics
+    - GET_LOGS:
+        payload:
+          deploymentId: string
+          tail?: number
+        response: LogEntry[]
+
+  notifications:
+    - DEPLOYMENT_STARTED:
+        payload:
+          deploymentId: string
+          platform: string
+    - DEPLOYMENT_COMPLETED:
+        payload:
+          deploymentId: string
+          url: string
+          status: success | failed
+    - HEALTH_ALERT:
+        payload:
+          deploymentId: string
+          issue: string
+          severity: low | medium | high
+
+components:
+  web:
+    - DeploymentStatus: Real-time deployment status
+    - HealthDashboard: System health metrics
+    - LogViewer: Deployment logs interface
+    - ScalingControls: Manual scaling interface
+  
+  monitoring:
+    - HealthEndpoint: /health
+    - MetricsEndpoint: /metrics
+    - LogsEndpoint: /logs
+
+### developer_portal
+state:
+  developers:
+    type: Map<string, Developer>
+    schema:
+      id: string
+      email: string
+      profile:
+        name: string
+        company?: string
+        avatar?: string
+      apiKeys: ApiKey[]
+      usage:
+        apiCalls: number
+        actorsCreated: number
+        deploymentsCount: number
+      subscription:
+        tier: free | pro | enterprise
+        quotas: Quotas
+
+  documentation:
+    type: Map<string, Documentation>
+    schema:
+      id: string
+      type: guide | api | tutorial
+      title: string
+      content: string
+      tags: string[]
+      version: string
+
+events:
+  commands:
+    - REGISTER_DEVELOPER:
+        payload:
+          email: string
+          profile: DeveloperProfile
+    - GENERATE_API_KEY:
+        payload:
+          developerId: string
+          name: string
+          permissions: string[]
+    - UPDATE_SUBSCRIPTION:
+        payload:
+          developerId: string
+          tier: string
+
+  queries:
+    - GET_DEVELOPER:
+        payload:
+          developerId: string
+        response: Developer
+    - GET_USAGE_STATS:
+        payload:
+          developerId: string
+          period: string
+        response: UsageStats
+    - SEARCH_DOCS:
+        payload:
+          query: string
+        response: Documentation[]
+
+  notifications:
+    - DEVELOPER_REGISTERED:
+        payload:
+          developerId: string
+          email: string
+    - API_KEY_CREATED:
+        payload:
+          developerId: string
+          keyName: string
+    - QUOTA_WARNING:
+        payload:
+          developerId: string
+          resource: string
+          usage: number
+          limit: number
+
+components:
+  web:
+    - DeveloperDashboard: Main developer portal
+    - ApiKeyManager: Manage API keys
+    - UsageMetrics: Usage statistics
+    - DocumentationBrowser: Browse docs
+    - QuickStart: Onboarding flow
+
+## Seed Business Actors
+
+### user_auth
+state:
+  users:
+    type: Map<string, User>
+    schema:
+      id: string
+      email: string
+      profile:
+        displayName: string
+        avatar?: string
+        bio?: string
+      roles: string[]
+      permissions: string[]
+      createdAt: Date
+      lastLogin: Date
+
+  sessions:
+    type: Map<string, Session>
+    schema:
+      id: string
+      userId: string
+      token: string
+      expiresAt: Date
+      device: DeviceInfo
+
+  verificationTokens:
+    type: Map<string, VerificationToken>
+    schema:
+      token: string
+      email: string
+      type: magic_link | password_reset
+      expiresAt: Date
+
+events:
+  commands:
+    - SEND_MAGIC_LINK:
+        payload:
+          email: string
+    - VERIFY_TOKEN:
+        payload:
+          token: string
+          email: string
+    - CREATE_SESSION:
+        payload:
+          userId: string
+          device: DeviceInfo
+    - UPDATE_PROFILE:
+        payload:
+          userId: string
+          updates: Partial<UserProfile>
+    - ASSIGN_ROLE:
+        payload:
+          userId: string
+          role: string
+
+  queries:
+    - GET_USER:
+        payload:
+          userId: string
+        response: User
+    - VERIFY_SESSION:
+        payload:
+          token: string
+        response: Session | null
+    - CHECK_PERMISSION:
+        payload:
+          userId: string
+          permission: string
+        response: boolean
+
+  notifications:
+    - USER_REGISTERED:
+        payload:
+          userId: string
+          email: string
+    - SESSION_CREATED:
+        payload:
+          userId: string
+          sessionId: string
+    - PROFILE_UPDATED:
+        payload:
+          userId: string
+          changes: string[]
+
+components:
+  web:
+    - LoginForm: Email/password login
+    - MagicLinkForm: Passwordless login
+    - UserProfile: Profile management
+    - AuthGuard: Route protection
+    - UserAvatar: Avatar component
+    - RoleManager: Admin role management
+
+  mobile:
+    - LoginScreen: Native login screen
+    - ProfileScreen: Profile management
+    - BiometricAuth: Fingerprint/FaceID
+    - UserCard: User info display
+
+  integrations:
+    - clerk: Clerk authentication
+    - auth0: Auth0 integration
+    - supabase: Supabase auth
+
+### stripe_billing
+state:
+  customers:
+    type: Map<string, Customer>
+    schema:
+      id: string
+      stripeCustomerId: string
+      userId: string
+      email: string
+      paymentMethods: PaymentMethod[]
+      defaultPaymentMethod?: string
+
+  subscriptions:
+    type: Map<string, Subscription>
+    schema:
+      id: string
+      stripeSubscriptionId: string
+      customerId: string
+      status: active | past_due | canceled | incomplete
+      plan:
+        id: string
+        name: string
+        price: number
+        interval: month | year
+      currentPeriod:
+        start: Date
+        end: Date
+
+  invoices:
+    type: Map<string, Invoice>
+    schema:
+      id: string
+      stripeInvoiceId: string
+      customerId: string
+      amount: number
+      status: draft | open | paid | void
+      dueDate: Date
+      items: InvoiceItem[]
+
+events:
+  commands:
+    - CREATE_CUSTOMER:
+        payload:
+          userId: string
+          email: string
+    - CREATE_SUBSCRIPTION:
+        payload:
+          customerId: string
+          planId: string
+          paymentMethodId: string
+    - UPDATE_SUBSCRIPTION:
+        payload:
+          subscriptionId: string
+          planId: string
+    - CANCEL_SUBSCRIPTION:
+        payload:
+          subscriptionId: string
+          immediately: boolean
+    - PROCESS_WEBHOOK:
+        payload:
+          event: StripeWebhookEvent
+
+  queries:
+    - GET_CUSTOMER:
+        payload:
+          userId: string
+        response: Customer
+    - GET_SUBSCRIPTION:
+        payload:
+          customerId: string
+        response: Subscription
+    - GET_INVOICES:
+        payload:
+          customerId: string
+          limit?: number
+        response: Invoice[]
+    - GET_PAYMENT_METHODS:
+        payload:
+          customerId: string
+        response: PaymentMethod[]
+
+  notifications:
+    - CUSTOMER_CREATED:
+        payload:
+          customerId: string
+          userId: string
+    - SUBSCRIPTION_CREATED:
+        payload:
+          subscriptionId: string
+          plan: string
+    - PAYMENT_SUCCEEDED:
+        payload:
+          invoiceId: string
+          amount: number
+    - PAYMENT_FAILED:
+        payload:
+          invoiceId: string
+          amount: number
+          reason: string
+
+components:
+  web:
+    - PricingTable: Display pricing plans
+    - BillingPage: Customer billing portal
+    - PaymentForm: Collect payment details
+    - SubscriptionManager: Manage subscription
+    - InvoiceList: View past invoices
+    - PaymentMethodList: Manage cards
+
+  mobile:
+    - BillingScreen: Native billing UI
+    - PaymentSheet: Native payment flow
+    - SubscriptionCard: Subscription status
+
+  webhooks:
+    - customer.created
+    - subscription.created
+    - subscription.updated
+    - subscription.deleted
+    - invoice.payment_succeeded
+    - invoice.payment_failed
+
+### notifications
+state:
+  templates:
+    type: Map<string, EmailTemplate>
+    schema:
+      id: string
+      name: string
+      subject: string
+      body: string
+      variables: string[]
+      type: transactional | marketing
+
+  messages:
+    type: Map<string, Message>
+    schema:
+      id: string
+      recipientId: string
+      channel: email | sms | push
+      template: string
+      variables: Record<string, any>
+      status: pending | sent | delivered | failed
+      sentAt?: Date
+      error?: string
+
+  preferences:
+    type: Map<string, UserPreferences>
+    schema:
+      userId: string
+      email:
+        marketing: boolean
+        transactional: boolean
+      sms:
+        enabled: boolean
+      push:
+        enabled: boolean
+        tokens: string[]
+
+events:
+  commands:
+    - SEND_EMAIL:
+        payload:
+          recipientId: string
+          template: string
+          variables: Record<string, any>
+    - SEND_SMS:
+        payload:
+          recipientId: string
+          message: string
+    - SEND_PUSH:
+        payload:
+          recipientId: string
+          title: string
+          body: string
+    - UPDATE_PREFERENCES:
+        payload:
+          userId: string
+          preferences: Partial<UserPreferences>
+    - CREATE_TEMPLATE:
+        payload:
+          name: string
+          subject: string
+          body: string
+
+  queries:
+    - GET_MESSAGE_STATUS:
+        payload:
+          messageId: string
+        response: Message
+    - GET_PREFERENCES:
+        payload:
+          userId: string
+        response: UserPreferences
+    - GET_TEMPLATES:
+        payload:
+          type?: string
+        response: EmailTemplate[]
+
+  notifications:
+    - MESSAGE_SENT:
+        payload:
+          messageId: string
+          channel: string
+    - MESSAGE_DELIVERED:
+        payload:
+          messageId: string
+          deliveredAt: Date
+    - MESSAGE_FAILED:
+        payload:
+          messageId: string
+          error: string
+
+components:
+  web:
+    - NotificationCenter: User notifications UI
+    - PreferencesForm: Manage preferences
+    - TemplateEditor: Edit email templates
+    - MessageHistory: View sent messages
+
+  templates:
+    - welcome: Welcome email
+    - passwordReset: Password reset
+    - subscriptionCreated: New subscription
+    - paymentFailed: Failed payment
+    - magicLink: Login link
+
+  integrations:
+    - resend: Email delivery
+    - sendgrid: Email alternative
+    - twilio: SMS delivery
+    - pusher: Push notifications
+
+### analytics
+state:
+  events:
+    type: Map<string, AnalyticsEvent>
+    schema:
+      id: string
+      name: string
+      userId?: string
+      sessionId: string
+      properties: Record<string, any>
+      timestamp: Date
+      context:
+        ip: string
+        userAgent: string
+        referrer?: string
+
+  metrics:
+    type: Map<string, Metric>
+    schema:
+      id: string
+      name: string
+      type: counter | gauge | histogram
+      value: number
+      tags: Record<string, string>
+      timestamp: Date
+
+  funnels:
+    type: Map<string, Funnel>
+    schema:
+      id: string
+      name: string
+      steps: FunnelStep[]
+      conversions: ConversionData[]
+
+  dashboards:
+    type: Map<string, Dashboard>
+    schema:
+      id: string
+      name: string
+      widgets: Widget[]
+      filters: Filter[]
+
+events:
+  commands:
+    - TRACK_EVENT:
+        payload:
+          name: string
+          userId?: string
+          properties: Record<string, any>
+    - RECORD_METRIC:
+        payload:
+          name: string
+          value: number
+          type: string
+    - CREATE_FUNNEL:
+        payload:
+          name: string
+          steps: string[]
+    - CREATE_DASHBOARD:
+        payload:
+          name: string
+          widgets: Widget[]
+
+  queries:
+    - GET_EVENTS:
+        payload:
+          filters: EventFilters
+          limit?: number
+        response: AnalyticsEvent[]
+    - GET_METRICS:
+        payload:
+          name: string
+          period: string
+        response: Metric[]
+    - GET_FUNNEL_REPORT:
+        payload:
+          funnelId: string
+          period: string
+        response: FunnelReport
+    - GET_DASHBOARD:
+        payload:
+          dashboardId: string
+        response: Dashboard
+
+  notifications:
+    - METRIC_THRESHOLD_EXCEEDED:
+        payload:
+          metric: string
+          value: number
+          threshold: number
+    - FUNNEL_CONVERSION_LOW:
+        payload:
+          funnel: string
+          rate: number
+
+components:
+  web:
+    - AnalyticsDashboard: Main analytics UI
+    - MetricChart: Visualize metrics
+    - FunnelVisualization: Funnel display
+    - EventStream: Real-time events
+    - DashboardBuilder: Create dashboards
+
+  metrics:
+    - monthlyRecurringRevenue: MRR calculation
+    - customerLifetimeValue: CLV metric
+    - churnRate: Customer churn
+    - dailyActiveUsers: DAU metric
+    - conversionRate: Signup conversion
+
+  integrations:
+    - posthog: Analytics platform
+    - mixpanel: Alternative analytics
+    - segment: Event routing

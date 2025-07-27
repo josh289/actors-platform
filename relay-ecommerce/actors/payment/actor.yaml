@@ -1,0 +1,148 @@
+actor:
+  name: payment
+  description: "Payment processing and transaction management"
+  version: 1.0.0
+  
+  # State Schema
+  state:
+    paymentMethods:
+      type: Map<string, PaymentMethod>
+      schema:
+        PaymentMethod:
+          id: string
+          userId: string
+          type: string
+          last4: string
+          brand: string
+          expiryMonth: number
+          expiryYear: number
+          isDefault: boolean
+          createdAt: timestamp
+    
+    transactions:
+      type: Map<string, Transaction>
+      schema:
+        Transaction:
+          id: string
+          orderId: string
+          userId: string
+          amount: number
+          currency: string
+          status: string
+          method: string
+          stripePaymentId: string
+          createdAt: timestamp
+          updatedAt: timestamp
+    
+    refunds:
+      type: Map<string, Refund>
+      schema:
+        Refund:
+          id: string
+          transactionId: string
+          amount: number
+          reason: string
+          status: string
+          createdAt: timestamp
+
+  # Event Handlers
+  handles:
+    PROCESS_PAYMENT:
+      description: "Process payment for order"
+      payload:
+        orderId: string
+        userId: string
+        amount: number
+        currency: string
+        paymentMethodId: string
+      validates:
+        - amount > 0
+      emits: PAYMENT_PROCESSED
+      
+    REFUND_PAYMENT:
+      description: "Refund a payment"
+      payload:
+        transactionId: string
+        amount: number
+        reason: string
+      validates:
+        - amount > 0
+      emits: PAYMENT_REFUNDED
+      
+    ADD_PAYMENT_METHOD:
+      description: "Save payment method"
+      payload:
+        userId: string
+        stripePaymentMethodId: string
+        setAsDefault: boolean
+      emits: PAYMENT_METHOD_ADDED
+      
+    REMOVE_PAYMENT_METHOD:
+      description: "Remove saved payment method"
+      payload:
+        paymentMethodId: string
+        userId: string
+      emits: PAYMENT_METHOD_REMOVED
+      
+    RETRY_PAYMENT:
+      description: "Retry failed payment"
+      payload:
+        orderId: string
+        paymentMethodId: string
+      emits: PAYMENT_RETRIED
+
+  # Queries
+  queries:
+    GET_PAYMENT_METHODS:
+      description: "Get user's payment methods"
+      payload:
+        userId: string
+      returns: array<PaymentMethod>
+      
+    GET_TRANSACTION:
+      description: "Get transaction details"
+      payload:
+        transactionId: string
+      returns: Transaction
+      
+    GET_ORDER_PAYMENT:
+      description: "Get payment for order"
+      payload:
+        orderId: string
+      returns: Transaction
+
+  # Event Subscriptions
+  subscribes:
+    ORDER_CREATED:
+      handler: initiatePayment
+      description: "Start payment process for new order"
+      
+    ORDER_CANCELLED:
+      handler: refundIfPaid
+      description: "Refund payment for cancelled order"
+      
+    SUBSCRIPTION_RENEWAL_DUE:
+      handler: processSubscriptionPayment
+      description: "Process recurring subscription payment"
+
+  # Dependencies
+  dependencies:
+    user:
+      events: 
+        - GET_USER
+      pattern: ask
+      timeout: 3000
+      purpose: "Verify user exists"
+    
+    notification:
+      events: 
+        - SEND_EMAIL
+      pattern: tell
+      purpose: "Send payment receipts"
+    
+    analytics:
+      events: 
+        - TRACK_EVENT
+        - TRACK_REVENUE
+      pattern: tell
+      purpose: "Track payment metrics"
