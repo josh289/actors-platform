@@ -1,0 +1,31 @@
+{
+  "name": "@actors-platform/mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for Actor-Agent Development Platform",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "@actors-platform/sdk": "workspace:*",
+    "dotenv": "^16.3.0",
+    "fastify": "^4.24.0",
+    "pg": "^8.11.0",
+    "pinecone-client": "^1.1.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.10.0",
+    "eslint": "^8.0.0",
+    "tsx": "^3.12.0",
+    "typescript": "^5.0.0",
+    "vitest": "^0.34.0"
+  }
+}
