@@ -8,6 +8,8 @@ import {
   Query,
   EventBuilder,
   ComponentExport,
+  ActorManifest,
+  EventDefinition,
 } from '@actors-platform/sdk';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
@@ -78,6 +80,488 @@ export class AuthActor extends Actor<AuthState> {
     
     // Register custom error transformers
     this.registerCustomErrorTransformers();
+  }
+
+  /**
+   * Declare the actor manifest for event registry
+   */
+  protected getActorManifest(): ActorManifest {
+    return {
+      actorName: 'user-auth',
+      description: 'Authentication and authorization actor for user management',
+      version: '1.0.0',
+      healthEndpoint: '/health',
+      produces: [
+        // Notifications this actor emits
+        AuthNotifications.USER_REGISTERED,
+        AuthNotifications.SESSION_CREATED,
+        AuthNotifications.SESSION_REVOKED,
+        AuthNotifications.PROFILE_UPDATED,
+        AuthNotifications.ROLE_ASSIGNED,
+        AuthNotifications.USER_DELETED,
+        AuthNotifications.MAGIC_LINK_SENT,
+        'JWT_SECRET_ROTATED', // Custom notification
+      ],
+      consumes: [
+        // External events this actor listens to
+        'billing.CUSTOMER_CREATED',
+      ],
+    };
+  }
+
+  /**
+   * Register event definitions with the event registry
+   */
+  protected async registerEventDefinitions(): Promise<void> {
+    if (!(Actor as any).eventRegistry) {
+      this.context.logger.warn('Event registry not available, skipping event registration');
+      return;
+    }
+
+    const eventDefinitions: EventDefinition[] = [
+      // Commands
+      {
+        name: AuthCommands.SEND_MAGIC_LINK,
+        category: 'command',
+        description: 'Send a magic link to user email for passwordless authentication',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { 
+              type: 'string', 
+              format: 'email',
+              description: 'Email address to send magic link to'
+            },
+            redirectUrl: { 
+              type: 'string',
+              format: 'uri',
+              description: 'URL to redirect after successful verification'
+            },
+            ipAddress: { 
+              type: 'string',
+              format: 'ipv4',
+              description: 'IP address of the request'
+            },
+            userAgent: { 
+              type: 'string',
+              description: 'User agent string of the request'
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthCommands.VERIFY_MAGIC_LINK,
+        category: 'command',
+        description: 'Verify a magic link token and create a session',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['token', 'email'],
+          properties: {
+            token: { 
+              type: 'string',
+              minLength: 32,
+              description: 'Magic link token'
+            },
+            email: { 
+              type: 'string',
+              format: 'email',
+              description: 'Email address associated with the token'
+            },
+            ipAddress: { 
+              type: 'string',
+              format: 'ipv4',
+              description: 'IP address of the verification request'
+            },
+            userAgent: { 
+              type: 'string',
+              description: 'User agent string of the verification request'
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthCommands.CREATE_SESSION,
+        category: 'command',
+        description: 'Create a new session for a user',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'device'],
+          properties: {
+            userId: { 
+              type: 'string',
+              description: 'User ID to create session for'
+            },
+            device: {
+              type: 'object',
+              required: ['userAgent', 'ipAddress'],
+              properties: {
+                userAgent: { type: 'string' },
+                ipAddress: { type: 'string', format: 'ipv4' },
+                biometricAuth: { type: 'boolean' },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthCommands.UPDATE_PROFILE,
+        category: 'command',
+        description: 'Update user profile information',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'updates'],
+          properties: {
+            userId: { type: 'string' },
+            updates: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', minLength: 1 },
+                avatar: { type: 'string', format: 'uri' },
+                bio: { type: 'string', maxLength: 500 },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthCommands.ASSIGN_ROLE,
+        category: 'command',
+        description: 'Assign a role to a user',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'roleId', 'grantedBy'],
+          properties: {
+            userId: { type: 'string' },
+            roleId: { type: 'string' },
+            grantedBy: { type: 'string' },
+            expiresAt: { type: 'string', format: 'date-time' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthCommands.REVOKE_SESSION,
+        category: 'command',
+        description: 'Revoke an active session',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthCommands.DELETE_USER,
+        category: 'command',
+        description: 'Soft delete a user account',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId'],
+          properties: {
+            userId: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthCommands.LOCK_ACCOUNT,
+        category: 'command',
+        description: 'Lock a user account for security reasons',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'reason'],
+          properties: {
+            userId: { type: 'string' },
+            reason: { type: 'string' },
+            duration: { 
+              type: 'integer',
+              minimum: 0,
+              description: 'Lock duration in milliseconds'
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+
+      // Queries
+      {
+        name: AuthQueries.GET_USER,
+        category: 'query',
+        description: 'Get user information by ID',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId'],
+          properties: {
+            userId: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthQueries.GET_SESSION,
+        category: 'query',
+        description: 'Validate and get session information by token',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['token'],
+          properties: {
+            token: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthQueries.GET_PERMISSION,
+        category: 'query',
+        description: 'Check if user has a specific permission',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'permission'],
+          properties: {
+            userId: { type: 'string' },
+            permission: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthQueries.GET_SESSIONS,
+        category: 'query',
+        description: 'Get all active sessions for a user',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId'],
+          properties: {
+            userId: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthQueries.GET_ROLES,
+        category: 'query',
+        description: 'Get all roles assigned to a user',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId'],
+          properties: {
+            userId: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthQueries.GET_SECURITY_EVENTS,
+        category: 'query',
+        description: 'Get security events for a user or system-wide',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            limit: { 
+              type: 'integer',
+              minimum: 1,
+              maximum: 1000,
+              default: 50
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+
+      // Notifications
+      {
+        name: AuthNotifications.USER_REGISTERED,
+        category: 'notification',
+        description: 'Emitted when a new user is registered',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'email', 'method'],
+          properties: {
+            userId: { type: 'string' },
+            email: { type: 'string', format: 'email' },
+            method: { 
+              type: 'string',
+              enum: ['magic_link', 'oauth', 'password']
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthNotifications.SESSION_CREATED,
+        category: 'notification',
+        description: 'Emitted when a new session is created',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'sessionId'],
+          properties: {
+            userId: { type: 'string' },
+            sessionId: { type: 'string' },
+            device: {
+              type: 'object',
+              properties: {
+                userAgent: { type: 'string' },
+                ipAddress: { type: 'string', format: 'ipv4' },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthNotifications.SESSION_REVOKED,
+        category: 'notification',
+        description: 'Emitted when a session is revoked',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'sessionId'],
+          properties: {
+            userId: { type: 'string' },
+            sessionId: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthNotifications.PROFILE_UPDATED,
+        category: 'notification',
+        description: 'Emitted when user profile is updated',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'changes'],
+          properties: {
+            userId: { type: 'string' },
+            changes: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of field names that were changed'
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthNotifications.ROLE_ASSIGNED,
+        category: 'notification',
+        description: 'Emitted when a role is assigned to a user',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId', 'roleId', 'grantedBy'],
+          properties: {
+            userId: { type: 'string' },
+            roleId: { type: 'string' },
+            grantedBy: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthNotifications.USER_DELETED,
+        category: 'notification',
+        description: 'Emitted when a user is deleted',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['userId'],
+          properties: {
+            userId: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: AuthNotifications.MAGIC_LINK_SENT,
+        category: 'notification',
+        description: 'Emitted when a magic link is sent',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'JWT_SECRET_ROTATED',
+        category: 'notification',
+        description: 'Emitted when JWT secret is rotated',
+        producerActor: 'user-auth',
+        version: 1,
+        payloadSchema: {
+          type: 'object',
+          required: ['secretId', 'rotatedAt', 'expiresAt'],
+          properties: {
+            secretId: { type: 'string' },
+            rotatedAt: { type: 'string', format: 'date-time' },
+            expiresAt: { type: 'string', format: 'date-time' },
+          },
+          additionalProperties: false,
+        },
+      },
+    ];
+
+    // Register all event definitions
+    for (const eventDef of eventDefinitions) {
+      try {
+        await (Actor as any).eventRegistry.register(eventDef);
+        this.context.logger.debug(`Registered event: ${eventDef.name}`);
+      } catch (error) {
+        this.context.logger.warn(`Failed to register event ${eventDef.name}: ${(error as Error).message}`);
+      }
+    }
   }
 
   /**

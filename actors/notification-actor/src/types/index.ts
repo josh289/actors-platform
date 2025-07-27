@@ -17,8 +17,10 @@ export interface Message {
   content?: string;
   status: MessageStatus;
   priority: 'low' | 'normal' | 'high';
+  createdAt?: Date;
   sentAt?: Date;
   deliveredAt?: Date;
+  readAt?: Date;
   failedAt?: Date;
   failureReason?: string;
   metadata?: Record<string, any>;

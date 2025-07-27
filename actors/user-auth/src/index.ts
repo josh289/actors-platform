@@ -13,5 +13,5 @@ export { LoginScreen } from './components/mobile/LoginScreen';
 export { BiometricPrompt } from './components/mobile/BiometricPrompt';
 export { QuickLoginSheet } from './components/mobile/QuickLoginSheet';
 
-// Export API setup for REST endpoints
-export { createAuthRouter, setupAuthAPI } from './api/auth';
+// TODO: Export API setup for REST endpoints when implemented
+// export { createAuthRouter, setupAuthAPI } from './api/auth';
