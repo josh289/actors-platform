@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "name": "relay-ecommerce",
+  "builds": [
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/actors/([^/]+)/([^/]+)",
+      "dest": "/api/actors/$1/$2"
+    },
+    {
+      "src": "/api/events/([^/]+)",
+      "dest": "/api/events/$1"
+    },
+    {
+      "src": "/api/catalog/([^/]+)",
+      "dest": "/api/catalog/$1"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "POSTGRES_HOST": "@postgres_host",
+    "POSTGRES_USER": "@postgres_user",
+    "POSTGRES_PASSWORD": "@postgres_password",
+    "REDIS_HOST": "@redis_host",
+    "REDIS_PASSWORD": "@redis_password",
+    "STRIPE_SECRET_KEY": "@stripe_secret_key",
+    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret",
+    "SENDGRID_API_KEY": "@sendgrid_api_key",
+    "TWILIO_ACCOUNT_SID": "@twilio_account_sid",
+    "TWILIO_AUTH_TOKEN": "@twilio_auth_token",
+    "MIXPANEL_TOKEN": "@mixpanel_token",
+    "DATADOG_API_KEY": "@datadog_api_key"
+  },
+  "functions": {
+    "api/actors/*/index.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "api/events/*.ts": {
+      "maxDuration": 10,
+      "memory": 512
+    }
+  },
+  "regions": ["iad1", "lhr1", "sin1"],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ]
+    }
+  ]
+}

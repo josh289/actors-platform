@@ -1,0 +1,160 @@
+actor:
+  name: order
+  description: "Order lifecycle management"
+  version: 1.0.0
+  
+  # State Schema
+  state:
+    orders:
+      type: Map<string, Order>
+      schema:
+        Order:
+          id: string
+          userId: string
+          items: array<OrderItem>
+          subtotal: number
+          tax: number
+          shipping: number
+          total: number
+          status: string
+          shippingAddress: Address
+          billingAddress: Address
+          createdAt: timestamp
+          updatedAt: timestamp
+        OrderItem:
+          productId: string
+          name: string
+          quantity: number
+          price: number
+          total: number
+        Address:
+          street: string
+          city: string
+          state: string
+          zip: string
+          country: string
+
+  # Event Handlers
+  handles:
+    CREATE_ORDER:
+      description: "Create new order from cart"
+      payload:
+        cartId: string
+        userId: string
+        items: array
+        shippingAddress: object
+        billingAddress: object
+      validates:
+        - items.length > 0
+      emits: ORDER_CREATED
+      
+    UPDATE_ORDER_STATUS:
+      description: "Update order status"
+      payload:
+        orderId: string
+        status: string
+        reason: string
+      validates:
+        - status in ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled']
+      emits: ORDER_UPDATED
+      
+    CANCEL_ORDER:
+      description: "Cancel an order"
+      payload:
+        orderId: string
+        reason: string
+      emits: ORDER_CANCELLED
+      
+    CONFIRM_ORDER:
+      description: "Confirm order after payment"
+      payload:
+        orderId: string
+        paymentId: string
+      emits: ORDER_CONFIRMED
+
+  # Queries
+  queries:
+    GET_ORDER:
+      description: "Get order details"
+      payload:
+        orderId: string
+      returns: Order
+      
+    GET_USER_ORDERS:
+      description: "Get all orders for user"
+      payload:
+        userId: string
+        status: string
+      returns: array<Order>
+      
+    GET_ORDER_STATUS:
+      description: "Get order status"
+      payload:
+        orderId: string
+      returns:
+        orderId: string
+        status: string
+        updatedAt: timestamp
+
+  # Event Subscriptions
+  subscribes:
+    CART_CHECKED_OUT:
+      handler: createOrderFromCart
+      description: "Create order when checkout completes"
+      
+    STOCK_RESERVED:
+      handler: updateOrderWithReservation
+      description: "Link stock reservation to order"
+      
+    STOCK_INSUFFICIENT:
+      handler: handleStockIssue
+      description: "Handle insufficient stock"
+      
+    PAYMENT_PROCESSED:
+      handler: confirmOrderPayment
+      description: "Confirm order after successful payment"
+      
+    PAYMENT_FAILED:
+      handler: handlePaymentFailure
+      description: "Handle failed payment"
+      
+    ORDER_SHIPPED:
+      handler: updateShippingStatus
+      description: "Update order when shipped"
+      
+    DELIVERY_CONFIRMED:
+      handler: markAsDelivered
+      description: "Mark order as delivered"
+
+  # Dependencies
+  dependencies:
+    inventory:
+      events: 
+        - RESERVE_STOCK
+        - RELEASE_STOCK
+      pattern: tell
+      purpose: "Manage inventory for orders"
+    
+    payment:
+      events: 
+        - PROCESS_PAYMENT
+      pattern: tell
+      purpose: "Process order payments"
+      
+    shipping:
+      events:
+        - CREATE_SHIPMENT
+      pattern: tell
+      purpose: "Create shipping labels"
+    
+    notification:
+      events: 
+        - SEND_EMAIL
+      pattern: tell
+      purpose: "Send order notifications"
+    
+    analytics:
+      events: 
+        - TRACK_EVENT
+      pattern: tell
+      purpose: "Track order metrics"

@@ -1,0 +1,175 @@
+name: notification
+version: 1.0.0
+description: Handles all outbound communications (email, SMS, push notifications)
+category: communication
+tier: gold
+
+metadata:
+  author: BMAD Framework
+  license: MIT
+  repository: https://github.com/your-org/notification-actor
+  documentation: ./docs/README.md
+
+exports:
+  actor:
+    class: NotificationActor
+    file: ./src/actor/NotificationActor.ts
+  
+  web:
+    widgets:
+      - name: NotificationCenter
+        description: In-app notification center
+        file: ./src/components/web/widgets/NotificationCenter.tsx
+        props:
+          userId: string
+          maxItems?: number
+    
+    pages:
+      - name: NotificationPreferences
+        description: Notification preferences management
+        file: ./src/components/web/pages/NotificationPreferences.tsx
+        props:
+          userId: string
+    
+    modals:
+      - name: EmailPreview
+        description: Preview email templates
+        file: ./src/components/web/modals/EmailPreview.tsx
+        props:
+          template: string
+          data: object
+    
+    micro:
+      - name: NotificationBell
+        description: Notification bell with count
+        file: ./src/components/web/micro/NotificationBell.tsx
+        props:
+          userId: string
+          showCount?: boolean
+  
+  mobile:
+    screens:
+      - name: NotificationScreen
+        description: In-app notifications list
+        file: ./src/components/mobile/NotificationScreen.tsx
+      - name: PreferencesScreen
+        description: Notification preferences
+        file: ./src/components/mobile/PreferencesScreen.tsx
+  
+  graphql:
+    schema: ./src/graphql/schema.ts
+    resolvers: ./src/graphql/resolvers.ts
+
+dependencies:
+  actors:
+    - name: user
+      version: ">=1.0.0"
+      events:
+        - GET_USER
+    - name: analytics
+      version: ">=1.0.0"
+      events:
+        - TRACK_EVENT
+  
+  external:
+    - name: "@sendgrid/mail"
+      version: "^8.1.0"
+      purpose: Email delivery
+    - name: "twilio"
+      version: "^4.19.0"
+      purpose: SMS delivery
+    - name: "firebase-admin"
+      version: "^11.11.0"
+      purpose: Push notifications
+
+environment:
+  required:
+    - SENDGRID_API_KEY
+    - TWILIO_ACCOUNT_SID
+    - TWILIO_AUTH_TOKEN
+    - TWILIO_FROM_NUMBER
+    - FIREBASE_SERVICE_ACCOUNT
+  optional:
+    - SMS_STATUS_WEBHOOK_URL
+    - EMAIL_FROM_ADDRESS
+    - EMAIL_FROM_NAME
+    - REDIS_URL
+    - LOG_LEVEL
+
+events:
+  commands:
+    - type: SEND_EMAIL
+      description: Sends templated email
+      payload:
+        to: string
+        template: string
+        data: object
+        priority?: string
+    
+    - type: SEND_SMS
+      description: Sends SMS message
+      payload:
+        to: string
+        message: string
+        urgent?: boolean
+    
+    - type: SEND_PUSH
+      description: Sends push notification
+      payload:
+        userId: string
+        title: string
+        body: string
+        data?: object
+    
+    - type: UPDATE_PREFERENCES
+      description: Updates user notification preferences
+      payload:
+        userId: string
+        preferences: object
+  
+  queries:
+    - type: GET_MESSAGE_STATUS
+      description: Checks delivery status
+      payload:
+        messageId: string
+  
+  notifications:
+    - type: MESSAGE_SENT
+      description: Track message delivery
+      subscribers: [analytics]
+    
+    - type: MESSAGE_DELIVERED
+      description: Track successful delivery
+      subscribers: [analytics]
+    
+    - type: MESSAGE_BOUNCED
+      description: Track delivery failures
+      subscribers: [analytics, user]
+
+state:
+  persistence: required
+  schema:
+    templates: Record<string, EmailTemplate>
+    messages: Record<string, Message>
+    preferences: Record<string, UserPreferences>
+    campaigns: Record<string, Campaign>
+
+performance:
+  sla:
+    sendEmail: 2000ms
+    sendSMS: 1000ms
+    sendPush: 1500ms
+  throughput:
+    email: 1000/minute
+    sms: 100/minute
+    push: 5000/minute
+
+security:
+  authentication: required
+  authorization:
+    - sendEmail: user.hasPermission('send:email')
+    - sendSMS: user.hasPermission('send:sms')
+    - sendPush: user.hasPermission('send:push')
+  encryption:
+    - at-rest: true
+    - in-transit: true

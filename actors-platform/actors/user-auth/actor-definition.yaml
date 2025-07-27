@@ -1,0 +1,381 @@
+# Actor Definition for Authentication Service
+
+Actor:
+  name: auth
+  domain: Authentication and Authorization
+  purpose: Manages user authentication, sessions, and role-based access control
+  
+  state:
+    users:
+      type: Map<string, User>
+      description: User accounts with profiles
+      persistence: required
+    sessions:
+      type: Map<string, Session>
+      description: Active authentication sessions
+      persistence: required
+    roles:
+      type: Map<string, Role>
+      description: Available roles in the system
+      persistence: required
+    permissions:
+      type: Map<string, Permission>
+      description: Granular permissions
+      persistence: required
+    verificationTokens:
+      type: Map<string, VerificationToken>
+      description: Magic link and password reset tokens
+      persistence: required
+      
+  dependencies:
+    - notification  # For sending authentication emails
+    - analytics    # For tracking security events
+    
+  autonomy: complete  # Can function without dependencies (graceful degradation)
+
+## Events
+
+### Incoming Events (Commands)
+commands:
+  - type: SEND_MAGIC_LINK
+    payload:
+      email: string
+      redirectUrl?: string
+    response: void
+    description: Send magic link email for passwordless login
+    
+  - type: VERIFY_MAGIC_LINK
+    payload:
+      token: string
+      email: string
+    response: { user: User, session: Session }
+    description: Verify magic link token and create session
+    
+  - type: CREATE_SESSION
+    payload:
+      userId: string
+      device: DeviceInfo
+    response: Session
+    description: Create new authenticated session
+    
+  - type: UPDATE_PROFILE
+    payload:
+      userId: string
+      updates: ProfileUpdates
+    response: User
+    description: Update user profile information
+    
+  - type: ASSIGN_ROLE
+    payload:
+      userId: string
+      roleId: string
+      grantedBy: string
+      expiresAt?: Date
+    response: void
+    description: Assign role to user with optional expiration
+    
+  - type: REVOKE_SESSION
+    payload:
+      sessionId: string
+    response: void
+    description: Revoke an active session
+    
+  - type: DELETE_USER
+    payload:
+      userId: string
+    response: void
+    description: Soft delete user account for GDPR compliance
+    
+  - type: LOCK_ACCOUNT
+    payload:
+      userId: string
+      reason: string
+      duration?: number
+    response: void
+    description: Lock user account for security reasons
+
+### Incoming Events (Queries)
+queries:
+  - type: GET_USER
+    payload:
+      userId: string
+    response: User | null
+    description: Get user by ID
+    
+  - type: GET_SESSION
+    payload:
+      token: string
+    response: { session: Session, user: User } | null
+    description: Verify and get session details
+    
+  - type: GET_PERMISSION
+    payload:
+      userId: string
+      permission: string
+    response: boolean
+    description: Check if user has specific permission
+    
+  - type: GET_SESSIONS
+    payload:
+      userId: string
+    response: Session[]
+    description: List all active sessions for user
+    
+  - type: GET_ROLES
+    payload:
+      userId: string
+    response: UserRole[]
+    description: Get user's assigned roles
+    
+  - type: GET_SECURITY_EVENTS
+    payload:
+      userId?: string
+      limit?: number
+    response: SecurityEvent[]
+    description: Get security audit log
+
+### Outgoing Events (To Other Actors)
+dependencies_events:
+  notification:
+    - event: SEND_EMAIL
+      purpose: Send magic link and security alert emails
+      pattern: tell
+      payload:
+        recipientEmail: string
+        template: string
+        variables: object
+        
+  analytics:
+    - event: TRACK_EVENT
+      purpose: Track authentication and security events
+      pattern: tell
+      payload:
+        name: string
+        userId?: string
+        properties: object
+
+### Published Events (Notifications)
+notifications:
+  - type: USER_REGISTERED
+    payload:
+      userId: string
+      email: string
+      method: string
+    subscribers: [billing, analytics, notification]
+    purpose: New user account created
+    
+  - type: SESSION_CREATED
+    payload:
+      userId: string
+      sessionId: string
+      device: DeviceInfo
+    subscribers: [analytics]
+    purpose: User logged in successfully
+    
+  - type: SESSION_REVOKED
+    payload:
+      userId: string
+      sessionId: string
+    subscribers: [analytics]
+    purpose: Session terminated
+    
+  - type: PROFILE_UPDATED
+    payload:
+      userId: string
+      changes: string[]
+    subscribers: [analytics]
+    purpose: User profile information changed
+    
+  - type: ROLE_ASSIGNED
+    payload:
+      userId: string
+      roleId: string
+      grantedBy: string
+    subscribers: [analytics, notification]
+    purpose: User permissions changed
+    
+  - type: USER_DELETED
+    payload:
+      userId: string
+    subscribers: [billing, analytics, notification]
+    purpose: User account deleted
+    
+  - type: MAGIC_LINK_SENT
+    payload:
+      email: string
+    subscribers: [analytics]
+    purpose: Authentication email sent
+
+## Component Exports
+
+### Web Components
+web:
+  widgets:
+    - name: AuthStatus
+      type: widget
+      props:
+        showAvatar: boolean
+        showName: boolean
+      description: Authentication status for app header/navbar
+      
+    - name: UserAvatar
+      type: widget
+      props:
+        userId: string
+        size: sm|md|lg
+      description: User avatar with dropdown menu
+      
+  pages:
+    - name: LoginPage
+      type: page
+      props:
+        redirectUrl?: string
+      description: Full page login with magic link and social auth
+      
+    - name: ProfilePage
+      type: page
+      props:
+        userId: string
+      description: User profile management page
+      
+    - name: SecurityDashboard
+      type: page
+      props:
+        userId: string
+      description: View sessions and security events
+      
+  modals:
+    - name: LoginModal
+      type: modal
+      props:
+        onSuccess: function
+        onClose: function
+      description: Quick login overlay modal
+      
+    - name: SessionManager
+      type: modal
+      props:
+        userId: string
+      description: Manage active sessions modal
+      
+  micro:
+    - name: LoginButton
+      type: micro
+      props:
+        variant: primary|secondary
+      description: Simple login trigger button
+      
+    - name: LogoutButton
+      type: micro
+      props:
+        confirmLogout?: boolean
+      description: Logout action button
+      
+    - name: AuthGuard
+      type: micro
+      props:
+        children: ReactNode
+        requiredPermission?: string
+        fallback?: ReactNode
+      description: Route protection wrapper
+
+### Mobile Components
+mobile:
+  screens:
+    - name: LoginScreen
+      type: screen
+      props:
+        navigation: NavigationProp
+      description: Mobile login with biometrics support
+      
+    - name: ProfileScreen
+      type: screen
+      props:
+        navigation: NavigationProp
+      description: User profile management screen
+      
+    - name: SecurityScreen
+      type: screen
+      props:
+        navigation: NavigationProp
+      description: Security settings and sessions
+      
+  widgets:
+    - name: AuthCard
+      type: widget
+      props:
+        user: User
+      description: User authentication status card
+      
+    - name: BiometricPrompt
+      type: widget
+      props:
+        onSuccess: function
+        onCancel: function
+      description: Fingerprint/FaceID authentication prompt
+      
+  modals:
+    - name: QuickLoginSheet
+      type: modal
+      props:
+        onSuccess: function
+      description: Bottom sheet for quick login
+
+### API Schema (GraphQL)
+graphql:
+  types:
+    - User
+    - Role
+    - Permission
+    - Session
+    - SecurityEvent
+    - AuthResult
+    
+  queries:
+    - currentUser
+    - userSessions
+    - hasPermission
+    - securityEvents
+    
+  mutations:
+    - sendMagicLink
+    - verifyMagicLink
+    - updateProfile
+    - logout
+    - revokeSession
+    
+  subscriptions:
+    - sessionUpdated
+    - securityAlert
+
+## Integration Points
+
+depends_on:
+  - notification: Email delivery for authentication
+  - analytics: Event tracking and metrics
+
+depended_by:
+  - billing: Needs user identity for customers
+  - All actors: Need authentication for API access
+
+external_services:
+  - Better Auth: Authentication library
+  - PostgreSQL: User data persistence
+  - Redis: Session caching (optional)
+
+## Security Considerations
+
+rate_limiting:
+  login_attempts: 5 per 15 minutes per email
+  api_requests: 100 per minute per IP
+  token_requests: 3 per hour per email
+
+encryption:
+  passwords: bcrypt with 12 rounds
+  tokens: cryptographically secure random
+  sessions: JWT with HS256
+  
+compliance:
+  gdpr: Soft delete, data export, audit logs
+  passwords: Minimum 8 characters
+  sessions: 24 hour timeout, device tracking

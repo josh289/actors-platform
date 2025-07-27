@@ -1,0 +1,67 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "turbo build",
+  "devCommand": "turbo dev",
+  "installCommand": "npm install",
+  "outputDirectory": ".next",
+  "functions": {
+    "api/actors/[...path].ts": {
+      "maxDuration": 30
+    },
+    "api/mcp/[...path].ts": {
+      "maxDuration": 60
+    },
+    "api/deploy/[...path].ts": {
+      "maxDuration": 300
+    }
+  },
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "REDIS_URL": "@redis_url",
+    "CLERK_SECRET_KEY": "@clerk_secret_key",
+    "STRIPE_SECRET_KEY": "@stripe_secret_key",
+    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret",
+    "RESEND_API_KEY": "@resend_api_key",
+    "POSTHOG_API_KEY": "@posthog_api_key",
+    "JWT_SECRET": "@jwt_secret"
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+        }
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/health-check",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/metrics-aggregate",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

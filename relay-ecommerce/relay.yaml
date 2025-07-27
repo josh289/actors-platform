@@ -1,0 +1,213 @@
+# Relay System Configuration - Complete e-commerce platform
+name: ecommerce-platform
+version: 1.0.0
+description: "Production-ready e-commerce system with Relay methodology"
+
+# Event Catalog Configuration
+event_catalog:
+  type: postgres
+  connection:
+    host: ${POSTGRES_HOST}
+    port: 5432
+    database: event_catalog
+    user: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    ssl: true
+  
+  # Event validation settings
+  validation:
+    strict: true  # Reject events not in catalog
+    cache_ttl: 300  # Cache schema for 5 minutes
+    
+  # Event synchronization
+  sync:
+    enabled: true
+    interval: 60  # Sync every minute
+    on_startup: true  # Load catalog on startup
+
+# Event Bus Configuration
+event_bus:
+  provider: redis
+  redis:
+    host: ${REDIS_HOST}
+    port: 6379
+    password: ${REDIS_PASSWORD}
+    cluster: false
+    
+  patterns:
+    ask:
+      timeout: 5000
+      retries: 2
+    tell:
+      delivery: at_least_once
+    publish:
+      delivery: best_effort
+      
+  persistence:
+    events: 7_days
+    failed: 30_days
+    metrics: 90_days
+
+# Actor Definitions
+actors:
+  # Core User Management
+  user:
+    source: ./actors/user
+    version: 1.0.0
+    instances: 3
+    config:
+      sessionTimeout: 86400
+      magicLinkExpiry: 900
+      
+  # Shopping Cart
+  cart:
+    source: ./actors/cart
+    version: 1.0.0
+    instances: 3
+    config:
+      sessionTimeout: 3600
+      maxItems: 100
+      
+  # Inventory Management
+  inventory:
+    source: ./actors/inventory
+    version: 1.0.0
+    instances: 2
+    config:
+      reservationTimeout: 900
+      lowStockThreshold: 10
+      
+  # Payment Processing
+  payment:
+    source: ./actors/payment
+    version: 1.0.0
+    instances: 2
+    config:
+      provider: stripe
+      currency: usd
+      retryAttempts: 3
+      
+  # Order Management
+  order:
+    source: ./actors/order
+    version: 1.0.0
+    instances: 3
+    config:
+      statuses: [pending, processing, shipped, delivered, cancelled]
+      
+  # Shipping Integration
+  shipping:
+    source: ./actors/shipping
+    version: 1.0.0
+    instances: 2
+    config:
+      providers: [fedex, ups, usps]
+      defaultProvider: fedex
+      
+  # Billing & Subscriptions
+  billing:
+    source: ./actors/billing
+    version: 1.0.0
+    instances: 2
+    config:
+      provider: stripe
+      trialDays: 14
+      
+  # Notifications
+  notification:
+    source: ./actors/notification
+    version: 1.0.0
+    instances: 2
+    config:
+      emailProvider: sendgrid
+      smsProvider: twilio
+      
+  # Analytics
+  analytics:
+    source: ./actors/analytics
+    version: 1.0.0
+    instances: 1
+    config:
+      provider: mixpanel
+      flushInterval: 60000
+
+# System Flows
+flows:
+  user_registration:
+    description: "New user signup flow"
+    steps:
+      - user.SEND_MAGIC_LINK
+      - notification.EMAIL_SENT
+      - user.VERIFY_TOKEN
+      - user.USER_REGISTERED
+      - billing.CUSTOMER_CREATED
+      
+  checkout:
+    description: "Complete checkout process"
+    steps:
+      - cart.CHECKOUT_CART
+      - inventory.STOCK_RESERVED
+      - order.ORDER_CREATED
+      - payment.PAYMENT_PROCESSED
+      - notification.EMAIL_SENT
+      
+  order_fulfillment:
+    description: "Order shipping flow"
+    steps:
+      - order.ORDER_CONFIRMED
+      - shipping.SHIPMENT_CREATED
+      - shipping.ORDER_SHIPPED
+      - notification.EMAIL_SENT
+
+# Deployment Configuration
+deployment:
+  platform: vercel
+  environment: ${ENVIRONMENT}
+  regions: [us-east-1, eu-west-1, ap-southeast-1]
+  
+  monitoring:
+    provider: datadog
+    apiKey: ${DATADOG_API_KEY}
+    alerts:
+      - type: error_rate
+        threshold: 0.05
+        action: notify_oncall
+      - type: latency_p95
+        threshold: 1000
+        action: scale_up
+        
+  scaling:
+    min_instances: 1
+    max_instances: 10
+    target_cpu: 70
+    target_memory: 80
+
+# External Services
+services:
+  postgres:
+    host: ${POSTGRES_HOST}
+    port: 5432
+    ssl: true
+    
+  redis:
+    host: ${REDIS_HOST}
+    port: 6379
+    ssl: true
+    
+  stripe:
+    publishableKey: ${STRIPE_PUBLISHABLE_KEY}
+    secretKey: ${STRIPE_SECRET_KEY}
+    webhookSecret: ${STRIPE_WEBHOOK_SECRET}
+    
+  sendgrid:
+    apiKey: ${SENDGRID_API_KEY}
+    fromEmail: noreply@example.com
+    
+  twilio:
+    accountSid: ${TWILIO_ACCOUNT_SID}
+    authToken: ${TWILIO_AUTH_TOKEN}
+    fromNumber: ${TWILIO_FROM_NUMBER}
+    
+  mixpanel:
+    token: ${MIXPANEL_TOKEN}
+    apiSecret: ${MIXPANEL_API_SECRET}

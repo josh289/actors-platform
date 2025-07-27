@@ -1,0 +1,129 @@
+actor:
+  name: cart
+  description: "Shopping cart management"
+  version: 1.0.0
+  
+  # State Schema
+  state:
+    carts:
+      type: Map<string, Cart>
+      schema:
+        Cart:
+          id: string
+          userId: string
+          items: array<CartItem>
+          total: number
+          createdAt: timestamp
+          updatedAt: timestamp
+        CartItem:
+          productId: string
+          quantity: number
+          price: number
+          name: string
+
+  # Event Handlers
+  handles:
+    ADD_TO_CART:
+      description: "Add item to cart"
+      payload:
+        userId: string
+        productId: string
+        quantity: number
+        price: number
+        name: string
+      validates:
+        - quantity > 0
+        - quantity <= 100
+        - price > 0
+      emits: ITEM_ADDED_TO_CART
+      
+    REMOVE_FROM_CART:
+      description: "Remove item from cart"
+      payload:
+        cartId: string
+        productId: string
+      emits: ITEM_REMOVED_FROM_CART
+      
+    UPDATE_CART_ITEM:
+      description: "Update item quantity"
+      payload:
+        cartId: string
+        productId: string
+        quantity: number
+      validates:
+        - quantity >= 0
+        - quantity <= 100
+      emits: CART_UPDATED
+      
+    CHECKOUT_CART:
+      description: "Start checkout process"
+      payload:
+        cartId: string
+      validates:
+        - cart.items.length > 0
+      emits: CART_CHECKED_OUT
+      
+    CLEAR_CART:
+      description: "Empty cart contents"
+      payload:
+        cartId: string
+      emits: CART_CLEARED
+
+  # Queries
+  queries:
+    GET_CART:
+      description: "Retrieve cart contents"
+      payload:
+        userId: string
+      returns: Cart
+      
+    GET_CART_BY_ID:
+      description: "Get cart by ID"
+      payload:
+        cartId: string
+      returns: Cart
+      
+    GET_CART_TOTAL:
+      description: "Calculate cart total"
+      payload:
+        cartId: string
+      returns: 
+        total: number
+        itemCount: number
+        items: array<CartItem>
+
+  # Event Subscriptions
+  subscribes:
+    STOCK_INSUFFICIENT:
+      handler: handleStockInsufficient
+      description: "Remove unavailable items"
+    
+    ORDER_CREATED:
+      handler: clearCartAfterOrder
+      description: "Clear cart after successful order"
+      
+    PAYMENT_FAILED:
+      handler: restoreCart
+      description: "Restore cart if payment fails"
+
+  # Dependencies
+  dependencies:
+    inventory:
+      events: 
+        - CHECK_STOCK
+      pattern: ask
+      timeout: 5000
+      purpose: "Validate stock availability"
+    
+    analytics:
+      events: 
+        - TRACK_EVENT
+      pattern: tell
+      purpose: "Track cart events"
+      
+    user:
+      events:
+        - GET_USER
+      pattern: ask
+      timeout: 3000
+      purpose: "Validate user exists"

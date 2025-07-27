@@ -1,0 +1,174 @@
+# Billing Actor - Relay Model
+actor:
+  name: billing
+  description: "Customer billing and subscription management"
+  version: 1.0.0
+  
+  # All state in one place - simple Maps
+  state:
+    customers:
+      type: Map<string, Customer>
+      schema:
+        Customer:
+          id: string
+          email: string
+          stripeCustomerId: string
+          defaultPaymentMethod: string
+          subscriptions: array<string>
+          totalRevenue: number
+          createdAt: timestamp
+          updatedAt: timestamp
+          
+    subscriptions:
+      type: Map<string, Subscription>
+      schema:
+        Subscription:
+          id: string
+          customerId: string
+          stripeSubscriptionId: string
+          status: string
+          planId: string
+          currentPeriodStart: timestamp
+          currentPeriodEnd: timestamp
+          cancelAtPeriodEnd: boolean
+          
+    invoices:
+      type: Map<string, Invoice>
+      schema:
+        Invoice:
+          id: string
+          customerId: string
+          subscriptionId: string
+          amount: number
+          currency: string
+          status: string
+          dueDate: timestamp
+          paidAt: timestamp
+
+  # Replace all command handlers
+  handles:
+    CREATE_CUSTOMER:
+      description: "Create billing customer profile"
+      payload:
+        userId: string
+        email: string
+        metadata: object
+      emits: CUSTOMER_CREATED
+      
+    CREATE_SUBSCRIPTION:
+      description: "Create new subscription"
+      payload:
+        customerId: string
+        priceId: string
+        trialDays: number
+      validates:
+        - trialDays >= 0
+        - trialDays <= 30
+      emits: SUBSCRIPTION_CREATED
+      
+    UPDATE_PAYMENT_METHOD:
+      description: "Update default payment method"
+      payload:
+        customerId: string
+        paymentMethodId: string
+      emits: PAYMENT_METHOD_UPDATED
+      
+    CANCEL_SUBSCRIPTION:
+      description: "Cancel subscription at period end"
+      payload:
+        subscriptionId: string
+        immediately: boolean
+      emits: SUBSCRIPTION_CANCELLED
+      
+    PROCESS_STRIPE_WEBHOOK:
+      description: "Handle Stripe webhook events"
+      payload:
+        event: object
+        signature: string
+      emits: WEBHOOK_PROCESSED
+
+  # Replace all query handlers
+  queries:
+    GET_CUSTOMER:
+      description: "Get customer with subscriptions"
+      payload:
+        customerId: string
+      returns: CustomerWithDetails
+      
+    GET_SUBSCRIPTION:
+      description: "Get subscription details"
+      payload:
+        subscriptionId: string
+      returns: Subscription
+      
+    LIST_INVOICES:
+      description: "List customer invoices"
+      payload:
+        customerId: string
+        limit: number
+      returns: array<Invoice>
+
+  # Event subscriptions
+  subscribes:
+    USER_REGISTERED:
+      handler: createCustomerForUser
+      description: "Auto-create customer for new users"
+      
+    PAYMENT_FAILED:
+      handler: handleFailedPayment
+      description: "Update subscription status"
+
+  # Dependencies
+  dependencies:
+    user:
+      events: [GET_USER]
+      pattern: ask
+      purpose: "Verify user exists"
+      
+    notification:
+      events: [SEND_EMAIL]
+      pattern: tell
+      purpose: "Send billing emails"
+      
+    analytics:
+      events: [TRACK_EVENT, TRACK_REVENUE]
+      pattern: tell
+      purpose: "Track billing metrics"
+
+  # Component exports
+  ui_exports:
+    web_components:
+      - name: PricingTable
+        type: widget
+        props:
+          plans: array<Plan>
+          currentPlan: string
+          onSelectPlan: function
+          
+      - name: BillingDashboard
+        type: page
+        props:
+          customerId: string
+          
+      - name: PaymentMethodModal
+        type: modal
+        props:
+          customerId: string
+          onSuccess: function
+          
+      - name: SubscriptionBadge
+        type: micro
+        props:
+          status: string
+          
+    mobile_components:
+      - name: BillingScreen
+        type: screen
+        props:
+          customerId: string
+          
+      - name: PaymentSheet
+        type: modal
+        props:
+          amount: number
+          onComplete: function
